@@ -20,7 +20,7 @@ def on_message(client, userdata, msg):
     valor = float(msg.payload.decode())
     aula  = msg.topic.split("/")[1]
 
-    alerta = "[ALERTA: temperatura alta]" if valor >= ALERTA_ALTA else ""
+    alerta = "  [ALERTA: temperatura alta]" if valor >= ALERTA_ALTA else ""
     print(f"[{hora}]  {aula:<10}  {valor:.1f} °C{alerta}")
 
 
