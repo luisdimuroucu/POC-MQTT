@@ -29,10 +29,10 @@ Los consumidores se suscriben únicamente a los tópicos que les interesan.
 Cuando un sensor registra una lectura, publica el dato en Mosquitto.  
 Dos clientes independientes consumen esos eventos simultáneamente:
 
-| Subscriber          | Responsabilidad                                                 |
-|---------------------|-----------------------------------------------------------------|
-| dashboard           | Muestra lecturas en tiempo real de todas las aulas             |
-| monitor técnico     | Filtra solo los datos de temperatura para alertas              |
+| Subscriber              | Responsabilidad                                                 |
+|-------------------------|-----------------------------------------------------------------|
+| subscriber_all.py       | Recibe lecturas en tiempo real de todas las aulas              |
+| subscriber_temperatura.py | Filtra solo los datos de temperatura para alertas            |
 
 ---
 
@@ -61,7 +61,7 @@ Dos clientes independientes consumen esos eventos simultáneamente:
                ┌────────────────┼────────────────┐
                ▼                ▼                ▼
       ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-      │  Dashboard   │ │   Monitor    │ │   Otros      │
+      │  sub_all     │ │  sub_temp    │ │   Otros      │
       │  sensores/#  │ │ sensores/+/  │ │  clientes    │
       │              │ │ temperatura  │ │              │
       └──────────────┘ └──────────────┘ └──────────────┘
@@ -91,6 +91,7 @@ Dos clientes independientes consumen esos eventos simultáneamente:
 ## Requisitos previos
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y corriendo
+- Python 3.8 o superior instalado
 - Terminal (PowerShell, bash, zsh, etc.)
 
 ---
@@ -99,11 +100,16 @@ Dos clientes independientes consumen esos eventos simultáneamente:
 
 ```
 mqtt-mosquitto-poc/
-├── docker-compose.yml          ← Levanta Mosquitto
+├── docker-compose.yml              ← Levanta Mosquitto
+├── requirements.txt                ← Dependencia: paho-mqtt
+├── README.md                       ← Este archivo
 ├── mosquitto/
 │   └── config/
-│       └── mosquitto.conf      ← Configuración del broker
-└── README.md                   ← Este archivo
+│       └── mosquitto.conf          ← Configuración del broker
+└── src/
+    ├── publisher.py                ← Simula sensores publicando telemetría
+    ├── subscriber_all.py           ← Subscriber: recibe todos los tópicos
+    └── subscriber_temperatura.py   ← Subscriber: solo temperatura, con alertas
 ```
 
 ---
@@ -114,6 +120,9 @@ mqtt-mosquitto-poc/
 listener 1883
 allow_anonymous true
 ```
+
+> Configuración simplificada para entorno académico. En producción se
+> configuraría autenticación con usuario/contraseña o certificados TLS.
 
 ---
 
@@ -139,56 +148,67 @@ docker compose logs mosquitto
 
 ---
 
-### 2. Abrir una sesión en el contenedor
-
-Todos los comandos de la demo se ejecutan dentro del contenedor de Mosquitto:
+### 2. Instalar dependencias Python
 
 ```bash
-docker exec -it mosquitto sh
+pip install -r requirements.txt
 ```
 
 ---
 
 ## Ejecutar la demo
 
-Abre **3 terminales** y en cada una ingresa al contenedor:
+Abre **3 terminales** desde la raíz del proyecto.
+
+### Terminal 1 — Subscriber general (recibe todo)
+
+```bash
+python src/subscriber_all.py
+```
+
+Se suscribe a `sensores/#` y muestra todas las lecturas en tiempo real con marca de hora.
+
+También se puede ejecutar directamente desde el contenedor:
 
 ```bash
 docker exec -it mosquitto sh
-```
-
-### Terminal 1 — Dashboard (recibe todo)
-
-```bash
 mosquitto_sub -v -t sensores/#
 ```
 
-> El wildcard `#` captura **cualquier tópico** que empiece con `sensores/`.  
-> Este subscriber simula un dashboard que muestra todas las lecturas.
-
 ---
 
-### Terminal 2 — Monitor técnico (solo temperatura)
+### Terminal 2 — Subscriber de temperatura (solo temperatura)
 
 ```bash
+python src/subscriber_temperatura.py
+```
+
+Se suscribe a `sensores/+/temperatura` y filtra solo temperatura. Muestra una alerta cuando la lectura supera los 28 °C.
+
+También se puede ejecutar directamente desde el contenedor:
+
+```bash
+docker exec -it mosquitto sh
 mosquitto_sub -v -t sensores/+/temperatura
 ```
 
-> El wildcard `+` reemplaza **exactamente un nivel** del tópico.  
-> Este subscriber recibe temperatura de cualquier aula, pero ignora humedad.
-
 ---
 
-### Terminal 3 — Publicar lecturas de sensores
+### Terminal 3 — Publisher (sensores simulados)
 
 ```bash
-mosquitto_pub -t sensores/aula1/temperatura -m "24.7"
-mosquitto_pub -t sensores/aula1/humedad -m "65"
-mosquitto_pub -t sensores/aula2/temperatura -m "22.3"
-mosquitto_pub -t sensores/aula2/humedad -m "70"
+python src/publisher.py
 ```
 
-Ejecuta cada línea por separado y observa en las otras terminales qué recibe cada subscriber.
+Simula dos sensores (Aula 1 y Aula 2) publicando temperatura y humedad cada 2 segundos con valores aleatorios.
+
+También se puede publicar manualmente desde el contenedor:
+
+```bash
+docker exec -it mosquitto sh
+mosquitto_pub -t sensores/aula1/temperatura -m "24.7"
+mosquitto_pub -t sensores/aula1/humedad -m "65"
+```
 
 ---
 
@@ -196,31 +216,32 @@ Ejecuta cada línea por separado y observa en las otras terminales qué recibe c
 
 ### Escenario 1 — Flujo normal
 
-1. Inicia los 2 subscribers (Terminales 1 y 2).
-2. Publica mensajes desde la Terminal 3.
-3. Observa que el **dashboard** recibe todos los mensajes y el **monitor técnico** solo los de temperatura.
-4. Ambos subscribers reciben los datos en tiempo real y de forma simultánea.
+1. Inicia `subscriber_all.py` (Terminal 1) y `subscriber_temperatura.py` (Terminal 2).
+2. Ejecuta el publisher (Terminal 3).
+3. Observa que el subscriber general recibe temperatura y humedad de ambas aulas, mientras el subscriber de temperatura solo recibe temperatura.
+4. Ambos reciben los datos simultáneamente sin que el publisher sepa quién está escuchando.
 
 ---
 
 ### Escenario 2 — Wildcards en acción
 
-1. Con los subscribers activos, publica desde distintas aulas:
+1. Con los subscribers activos, publicá manualmente desde el contenedor:
 
    ```bash
+   docker exec -it mosquitto sh
    mosquitto_pub -t sensores/aula1/temperatura -m "24.7"
    mosquitto_pub -t sensores/aula2/temperatura -m "22.3"
    mosquitto_pub -t sensores/aula3/temperatura -m "26.1"
    ```
 
-2. Observa que el monitor técnico (`sensores/+/temperatura`) recibe las tres lecturas.
-3. Ahora publica humedad:
+2. Observa que `subscriber_temperatura.py` (`sensores/+/temperatura`) recibe las tres lecturas, incluyendo el Aula 3 que no existía antes.
+3. Publicá humedad:
 
    ```bash
    mosquitto_pub -t sensores/aula1/humedad -m "65"
    ```
 
-4. El monitor técnico **no recibe este mensaje**. El dashboard sí.
+4. `subscriber_temperatura.py` **no recibe este mensaje**. `subscriber_all.py` sí.
 
 > Esto demuestra el **filtrado flexible** por tópico sin necesidad de lógica en el broker.
 
@@ -228,22 +249,15 @@ Ejecuta cada línea por separado y observa en las otras terminales qué recibe c
 
 ### Escenario 3 — Subscriber caído (diferencia con AMQP)
 
-1. Detén el dashboard con `Ctrl+C` en la Terminal 1.
-2. Publica varios mensajes:
+1. Detén `subscriber_all.py` con `Ctrl+C` en la Terminal 1.
+2. Dejá el publisher corriendo — sigue publicando mensajes.
+3. Volvé a iniciar el subscriber:
 
    ```bash
-   mosquitto_pub -t sensores/aula1/temperatura -m "25.0"
-   mosquitto_pub -t sensores/aula1/temperatura -m "25.5"
-   mosquitto_pub -t sensores/aula1/temperatura -m "26.0"
+   python src/subscriber_all.py
    ```
 
-3. Vuelve a iniciar el dashboard:
-
-   ```bash
-   mosquitto_sub -v -t sensores/#
-   ```
-
-4. Observa que el dashboard **no recibe los mensajes publicados mientras estuvo caído**.
+4. Observa que **no recibe los mensajes publicados mientras estuvo caído**.
 
 > Esto ilustra la diferencia fundamental con AMQP: **MQTT por defecto (QoS 0)
 > no garantiza entrega** si el subscriber no está conectado. En AMQP, los
@@ -253,24 +267,17 @@ Ejecuta cada línea por separado y observa en las otras terminales qué recibe c
 
 ### Escenario 4 — Escalabilidad: nuevos subscribers sin cambiar nada
 
-1. Abre una cuarta terminal e ingresa al contenedor.
-2. Suscríbete a un nuevo tópico específico:
+1. Abrí una cuarta terminal y ejecutá `subscriber_temperatura.py` nuevamente:
 
    ```bash
-   mosquitto_sub -v -t sensores/aula1/#
+   python src/subscriber_temperatura.py
    ```
 
-3. Publica mensajes de distintas aulas:
-
-   ```bash
-   mosquitto_pub -t sensores/aula1/temperatura -m "24.7"
-   mosquitto_pub -t sensores/aula2/temperatura -m "22.3"
-   ```
-
-4. El nuevo subscriber recibe solo los mensajes del Aula 1, sin haber modificado nada en los publishers.
+2. Observa que ahora hay **dos instancias** recibiendo los mismos mensajes en paralelo.
+3. El publisher no requirió ningún cambio — no sabe cuántos subscribers hay.
 
 > Esto demuestra **escalabilidad y desacoplamiento**: cualquier nuevo cliente
-> puede suscribirse a cualquier tópico sin coordinación con los publishers.
+> puede suscribirse en cualquier momento sin coordinación con los publishers.
 
 ---
 
@@ -311,17 +318,17 @@ pero no de otras aulas.
 
 ## Conceptos demostrados
 
-| Concepto            | Dónde se ve en la POC                                                              |
-|---------------------|------------------------------------------------------------------------------------|
-| **Broker**          | Mosquitto actúa como intermediario entre publishers y subscribers                  |
-| **Publisher**       | Los comandos `mosquitto_pub` publican sin saber quién está suscripto               |
-| **Subscriber**      | Los comandos `mosquitto_sub` reciben mensajes de forma independiente               |
-| **Tópicos**         | `sensores/aula1/temperatura` — jerarquía con `/` como separador                    |
-| **Wildcard `#`**    | Suscripción a múltiples niveles — útil para el dashboard general                   |
-| **Wildcard `+`**    | Suscripción a un nivel específico — útil para filtrar por tipo de dato             |
-| **Desacoplamiento** | Los publishers no conocen ni dependen de los subscribers                           |
-| **Escalabilidad**   | Se pueden agregar subscribers en cualquier momento sin cambiar nada                |
-| **QoS 0**           | Fire-and-forget: el broker no garantiza entrega si el subscriber está desconectado |
+| Concepto            | Dónde se ve en la POC                                                                        |
+|---------------------|----------------------------------------------------------------------------------------------|
+| **Broker**          | Mosquitto actúa como intermediario entre publishers y subscribers                            |
+| **Publisher**       | `publisher.py` publica sin saber quién está suscripto; o `mosquitto_pub` manualmente         |
+| **Subscriber**      | `subscriber_all.py` y `subscriber_temperatura.py` reciben mensajes de forma independiente    |
+| **Tópicos**         | `sensores/aula1/temperatura` — jerarquía con `/` como separador                              |
+| **Wildcard `#`**    | Suscripción a múltiples niveles — usado en `subscriber_all.py`                               |
+| **Wildcard `+`**    | Suscripción a un nivel específico — usado en `subscriber_temperatura.py`                     |
+| **Desacoplamiento** | Los publishers no conocen ni dependen de los subscribers                                     |
+| **Escalabilidad**   | Se pueden agregar subscribers en cualquier momento sin cambiar nada                          |
+| **QoS 0**           | Fire-and-forget: el broker no garantiza entrega si el subscriber está desconectado           |
 
 ---
 
@@ -332,6 +339,12 @@ Con la configuración de esta POC (QoS 0, sin persistencia), los mensajes public
 
 **¿Qué es un mensaje retained?**  
 Un mensaje marcado como retained es almacenado por el broker y enviado inmediatamente a cualquier nuevo subscriber que se conecte a ese tópico. Útil para que un sensor "anuncie" su último valor conocido.
+
+**¿Qué es QoS en MQTT?**  
+Quality of Service define la garantía de entrega:
+- QoS 0: Fire-and-forget, sin confirmación (esta POC).
+- QoS 1: Al menos una entrega (puede haber duplicados).
+- QoS 2: Exactamente una entrega.
 
 **¿Cuál es la diferencia entre MQTT y REST/HTTP?**  
 HTTP es síncrono: el emisor espera la respuesta del receptor. MQTT es asíncrono: el publisher publica en el broker y continúa sin esperar. El broker se encarga de distribuir el mensaje a todos los subscribers conectados.
