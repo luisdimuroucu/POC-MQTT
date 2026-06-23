@@ -100,16 +100,16 @@ Dos clientes independientes consumen esos eventos simultáneamente:
 
 ```
 mqtt-mosquitto-poc/
-├── docker-compose.yml              ← Levanta Mosquitto
-├── requirements.txt                ← Dependencia: paho-mqtt
-├── README.md                       ← Este archivo
+├── docker-compose.yml              <- Levanta Mosquitto
+├── requirements.txt                <- Dependencia: paho-mqtt
+├── README.md                       <- Este archivo
 ├── mosquitto/
 │   └── config/
-│       └── mosquitto.conf          ← Configuración del broker
+│       └── mosquitto.conf          <- Configuración del broker
 └── src/
-    ├── publisher.py                ← Simula sensores publicando telemetría
-    ├── subscriber_all.py           ← Subscriber: recibe todos los tópicos
-    └── subscriber_temperatura.py   ← Subscriber: solo temperatura, con alertas
+    ├── publisher.py                <- Simula sensores publicando telemetría
+    ├── subscriber_all.py           <- Subscriber: recibe todos los tópicos
+    └── subscriber_temperatura.py   <- Subscriber: solo temperatura, con alertas
 ```
 
 ---
@@ -156,7 +156,7 @@ python -m venv venv
 
 Activar el entorno:
 
-- **Windows:** `venv\Scripts\activate`
+- **Windows:** `.\venv\Scripts\activate`
 - **macOS / Linux:** `source venv/bin/activate`
 
 Instalar dependencias:
