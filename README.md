@@ -148,7 +148,18 @@ docker compose logs mosquitto
 
 ---
 
-### 2. Instalar dependencias Python
+### 2. Crear el entorno virtual e instalar dependencias
+
+```bash
+python -m venv venv
+```
+
+Activar el entorno:
+
+- **Windows:** `venv\Scripts\activate`
+- **macOS / Linux:** `source venv/bin/activate`
+
+Instalar dependencias:
 
 ```bash
 pip install -r requirements.txt
